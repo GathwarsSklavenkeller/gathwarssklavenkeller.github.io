@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>PS Challenges Border Creator</title>
+    <title>PolyZone Creator (Single JSON Export)</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -123,17 +123,13 @@
       var bounds = [bottomLeft, topRight];
 
       // ---------------------------
-      // JSON EXPORT STATE
+      // SINGLE EXPORT STATE
       // ---------------------------
-      // Export format:
-      // [
-      //   { "name": "zone1", "type": "polygon", "points": [ {X:...,Y:...}, ...closed ] },
-      //   { "name": "circle1", "type": "circle", "center": {X:...,Y:...}, "radius": 123.45 }
-      // ]
-      var exportData = [];
+      var currentName = null;      // filename base
+      var currentPoints = null;    // [{X,Y}, ... closed]
+      var currentLayer = null;     // Leaflet layer reference (only one polygon)
 
       function toFloat(n, digits = 2) {
-        // Ensure actual number (float) in JSON, not string
         return parseFloat(Number(n).toFixed(digits));
       }
 
@@ -173,7 +169,6 @@
       }
 
       //Create Leaflet.Draw toolbar/layer
-      //Fix for broken Draw
       L.Draw.Polyline.prototype._onTouch = L.Util.falseFn;
 
       var editableLayers = L.featureGroup();
@@ -182,6 +177,10 @@
       var drawControl = new L.Control.Draw({
         draw: {
           polyline: false,
+          circle: false,       // <- circles aus, weil du "eine area" + vector array willst
+          rectangle: true,
+          polygon: true,
+          marker: false,
           circlemarker: false,
         },
         edit: {
@@ -194,19 +193,9 @@
       function latlngToGTA(latlng) {
         var x = (latlng.lng - mapCenterLng) / gtaOffset;
         var y = (latlng.lat - mapCenterLat) / gtaOffset;
-        // return numeric floats
         return { X: toFloat(x, 2), Y: toFloat(y, 2) };
       }
 
-      //Remove all shapes from Draw
-      function clearLayer() {
-        editableLayers.getLayers().forEach((layer) => {
-          editableLayers.removeLayer(layer);
-        });
-        exportData = [];
-      }
-
-      // Ensure polygon is closed: last point equals first point
       function closePolygon(points) {
         if (!points || points.length < 3) return points;
         const first = points[0];
@@ -217,37 +206,10 @@
         return points;
       }
 
-      function polygonToPoints(layer) {
-        // Leaflet polygon: layer._latlngs[0] is ring
+      function layerToPoints(layer) {
         const ring = layer._latlngs?.[0] ?? [];
         const points = ring.map((latlng) => latlngToGTA(latlng));
         return closePolygon(points);
-      }
-
-      function circleToData(layer) {
-        return {
-          center: latlngToGTA(layer.getLatLng()),
-          // keeping your old scaling *1.5, keep or remove as you like:
-          radius: toFloat(layer.getRadius() * 1.5, 2),
-        };
-      }
-
-      function upsertExportItem(id, item) {
-        const idx = exportData.findIndex((z) => z.id === id);
-        if (idx === -1) exportData.push(item);
-        else exportData[idx] = item;
-      }
-
-      function removeExportItem(id) {
-        exportData = exportData.filter((z) => z.id !== id);
-      }
-
-      function layerToPopupJSON(item) {
-        return (
-          "<code style='white-space:pre-wrap;'>" +
-          escapeHtml(JSON.stringify(item, null, 2)) +
-          "</code>"
-        );
       }
 
       function escapeHtml(str) {
@@ -259,116 +221,91 @@
           .replaceAll("'", "&#039;");
       }
 
+      function bindPopup(layer) {
+        const json = JSON.stringify(currentPoints ?? [], null, 2);
+        layer.bindPopup(
+          "<b>" +
+            escapeHtml((currentName ?? "unnamed") + ".json") +
+            "</b><br/><code style='white-space:pre-wrap;'>" +
+            escapeHtml(json) +
+            "</code>",
+          { minWidth: 500 }
+        );
+      }
+
+      function clearLayer() {
+        editableLayers.getLayers().forEach((l) => editableLayers.removeLayer(l));
+        currentLayer = null;
+        currentName = null;
+        currentPoints = null;
+      }
+
+      function sanitizeFilename(name) {
+        // keep it simple & safe
+        return (name || "area")
+          .trim()
+          .replaceAll(/[^a-zA-Z0-9_\- ]/g, "")
+          .replaceAll(/\s+/g, "_")
+          .slice(0, 60);
+      }
+
       function downloadJSON() {
-        // Strip internal ids from export (optional)
-        const clean = exportData.map(({ id, ...rest }) => rest);
-        const blob = new Blob([JSON.stringify(clean, null, 2)], {
+        if (!currentPoints || currentPoints.length < 4) {
+          alert("Kein Polygon vorhanden zum Export.");
+          return;
+        }
+        const filename = (currentName ? currentName : "area") + ".json";
+        const blob = new Blob([JSON.stringify(currentPoints, null, 2)], {
           type: "application/json",
         });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "polyzones.json";
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
       }
 
-      // Track deletes
+      // If user deletes the polygon
       map.on(L.Draw.Event.DELETED, (e) => {
-        e.layers.eachLayer(function (layer) {
-          if (layer && layer.__exportId) {
-            removeExportItem(layer.__exportId);
-          }
-        });
+        // since we only allow one, any delete clears state
+        clearLayer();
       });
 
-      //On shape created
+      // On shape created
       map.on(L.Draw.Event.CREATED, (e) => {
-        var type = e.layerType,
-          layer = e.layer;
+        const type = e.layerType;
+        const layer = e.layer;
 
-        // Unique id for this layer in export
-        layer.__exportId = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+        // Only allow polygon/rectangle as "area"
+        if (type !== "polygon" && type !== "rectangle") return;
 
-        if (type === "marker") {
-          const position = latlngToGTA(layer.getLatLng());
-          layer.bindPopup(
-            "GTA Position: " +
-              JSON.stringify(position) +
-              ", latlng: " +
-              layer.getLatLng()
-          );
-        } else if (type === "circle") {
-          const name = prompt("Enter circlezone name: ") || "unnamed_circle";
-          const c = circleToData(layer);
-
-          const item = {
-            id: layer.__exportId,
-            name,
-            type: "circle",
-            center: c.center,
-            radius: c.radius,
-          };
-
-          upsertExportItem(layer.__exportId, item);
-          layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
-        } else {
-          const name = prompt("Enter polyzone name:") || "unnamed_polygon";
-          const points = polygonToPoints(layer);
-
-          const item = {
-            id: layer.__exportId,
-            name,
-            type: "polygon",
-            points, // [{X,Y}, ... closed]
-          };
-
-          upsertExportItem(layer.__exportId, item);
-          console.log(item);
-          layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
+        // Replace existing area automatically
+        if (currentLayer) {
+          editableLayers.removeLayer(currentLayer);
         }
 
+        // Ask for filename base
+        const rawName = prompt("Enter area name (will be filename):", currentName ?? "area");
+        currentName = sanitizeFilename(rawName);
+
+        currentLayer = layer;
+        currentPoints = layerToPoints(layer);
+
+        bindPopup(layer);
         editableLayers.addLayer(layer);
       });
 
-      //On shape edited
+      // On shape edited
       map.on(L.Draw.Event.EDITED, (e) => {
-        var layers = e.layers;
+        e.layers.eachLayer(function (layer) {
+          // Only track the single current layer
+          if (!currentLayer || layer !== currentLayer) return;
 
-        layers.eachLayer(function (layer) {
-          if (!layer.__exportId) return;
-
-          const existing = exportData.find((z) => z.id === layer.__exportId);
-          if (!existing) return;
-
-          if (layer instanceof L.Marker) {
-            const position = latlngToGTA(layer.getLatLng());
-            layer.bindPopup(
-              "GTA Position: " +
-                JSON.stringify(position) +
-                ", latlng: " +
-                layer.getLatLng()
-            );
-          } else if (layer instanceof L.Circle) {
-            const c = circleToData(layer);
-            const item = {
-              ...existing,
-              center: c.center,
-              radius: c.radius,
-            };
-            upsertExportItem(layer.__exportId, item);
-            layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
-          } else {
-            const points = polygonToPoints(layer);
-            const item = {
-              ...existing,
-              points,
-            };
-            upsertExportItem(layer.__exportId, item);
-            layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
-          }
+          currentPoints = layerToPoints(layer);
+          bindPopup(layer);
         });
       });
     </script>
