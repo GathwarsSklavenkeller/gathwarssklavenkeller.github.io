@@ -1,12 +1,24 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>PolyZone Creator</title>
+    <title>PS Challenges Border Creator</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" integrity="sha512-gc3xjCmIy673V6MyOAZhIW93xhM9ei1I+gLbmFjUHIjocENRsLX/QUE1htk5q1XV2D/iie/VQ8DXI6Vu8bexvQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css"
+      integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"
+      integrity="sha512-gc3xjCmIy673V6MyOAZhIW93xhM9ei1I+gLbmFjUHIjocENRsLX/QUE1htk5q1XV2D/iie/VQ8DXI6Vu8bexvQ=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
 
     <style>
       html,
@@ -39,6 +51,10 @@
       .btn-overlay {
         top: 2px;
         right: 250px;
+      }
+      .btn-download {
+        top: 2px;
+        right: 370px;
       }
       .btn:hover {
         cursor: pointer;
@@ -74,8 +90,23 @@
       Overlay Grid
     </button>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" integrity="sha512-ozq8xQKq6urvuU6jNgkfqAmT7jKN2XumbrX1JiB3TnF7tI48DPI4Gy1GXKD/V3EExgAs1V+pRO7vwtS1LHg0Gw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <button class="btn btn-download" onclick="downloadJSON();">
+      Download JSON
+    </button>
+
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"
+      integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"
+      integrity="sha512-ozq8xQKq6urvuU6jNgkfqAmT7jKN2XumbrX1JiB3TnF7tI48DPI4Gy1GXKD/V3EExgAs1V+pRO7vwtS1LHg0Gw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+
     <script>
       //Map Options
       var mapMinZoom = 0;
@@ -91,163 +122,37 @@
       var topRight = [0, 8192];
       var bounds = [bottomLeft, topRight];
 
-      L.Draw.Circle = L.Draw.SimpleShape.extend({
-        statics: {
-          TYPE: "circle",
-        },
+      // ---------------------------
+      // JSON EXPORT STATE
+      // ---------------------------
+      // Export format:
+      // [
+      //   { "name": "zone1", "type": "polygon", "points": [ {X:...,Y:...}, ...closed ] },
+      //   { "name": "circle1", "type": "circle", "center": {X:...,Y:...}, "radius": 123.45 }
+      // ]
+      var exportData = [];
 
-        options: {
-          shapeOptions: {
-            stroke: true,
-            color: "#3388ff",
-            weight: 4,
-            opacity: 0.5,
-            fill: true,
-            fillColor: null, //same as color by default
-            fillOpacity: 0.2,
-            clickable: true,
-          },
-          showRadius: true,
-          metric: true, // Whether to use the metric measurement system or imperial
-          feet: true, // When not metric, use feet instead of yards for display
-          nautic: false, // When not metric, not feet use nautic mile for display
-        },
-
-        // @method initialize(): void
-        initialize: function (map, options) {
-          // Save the type so super can fire, need to do this as cannot do this.TYPE :(
-          this.type = L.Draw.Circle.TYPE;
-
-          this._initialLabelText =
-            L.drawLocal.draw.handlers.circle.tooltip.start;
-
-          L.Draw.SimpleShape.prototype.initialize.call(this, map, options);
-        },
-
-        _drawShape: function (latlng) {
-          // Calculate the distance based on the version
-          let outerPos = latlngToGTA(latlng);
-          let innerPos = latlngToGTA(this._startLatLng);
-          var distance = Math.hypot(
-            innerPos[0] - outerPos[0],
-            innerPos[1] - outerPos[1]
-          );
-
-          if (!this._shape) {
-            this._shape = new L.Circle(
-              this._startLatLng,
-              distance,
-              this.options.shapeOptions
-            );
-            this._map.addLayer(this._shape);
-          } else {
-            this._shape.setRadius(distance);
-          }
-        },
-
-        _fireCreatedEvent: function () {
-          var circle = new L.Circle(
-            this._startLatLng,
-            this._shape.getRadius(),
-            this.options.shapeOptions
-          );
-          L.Draw.SimpleShape.prototype._fireCreatedEvent.call(this, circle);
-        },
-
-        _onMouseMove: function (e) {
-          var latlng = e.latlng,
-            showRadius = this.options.showRadius,
-            useMetric = this.options.metric,
-            radius;
-
-          this._tooltip.updatePosition(latlng);
-          if (this._isDrawing) {
-            this._drawShape(latlng);
-
-            // Get the new radius (rounded to 1 dp)
-            radius = this._shape.getRadius().toFixed(1);
-
-            var subtext = "";
-            if (showRadius) {
-              subtext =
-                L.drawLocal.draw.handlers.circle.radius +
-                ": " +
-                L.GeometryUtil.readableDistance(
-                  radius,
-                  useMetric,
-                  this.options.feet,
-                  this.options.nautic
-                );
-            }
-            this._tooltip.updateContent({
-              text: this._endLabelText,
-              subtext: subtext,
-            });
-          }
-        },
-      });
-
-      L.Edit.CircleMarker = L.Edit.Circle.extend({
-
-        _resize: function (latlng) {
-          var moveLatLng = this._moveMarker.getLatLng();
-
-          // Calculate the distance based on the version
-          let outerPos = latlngToGTA(latlng);
-          let innerPos = latlngToGTA(this._startLatLng);
-          var distance = Math.hypot(
-            innerPos[0] - outerPos[0],
-            innerPos[1] - outerPos[1]
-          );
-
-          if (this._map.editTooltip) {
-            this._map._editTooltip.updateContent({
-              text:
-                L.drawLocal.edit.handlers.edit.tooltip.subtext +
-                "<br />" +
-                L.drawLocal.edit.handlers.edit.tooltip.text,
-              subtext:
-                L.drawLocal.draw.handlers.circle.radius +
-                ": " +
-                L.GeometryUtil.readableDistance(
-                  distance,
-                  true,
-                  this.options.feet,
-                  this.options.nautic
-                ),
-            });
-          }
-
-          this._shape.setRadius(distance);
-
-          this._map.fire(L.Draw.Event.EDITRESIZE, { layer: this._shape });
-        },
-      });
+      function toFloat(n, digits = 2) {
+        // Ensure actual number (float) in JSON, not string
+        return parseFloat(Number(n).toFixed(digits));
+      }
 
       //Create a new (square) coordinate system
       var crs = L.CRS.Simple;
-
       crs.scale = function (zoom) {
         return Math.pow(2, zoom) / mapMinResolution;
       };
-      /*
-      crs.zoom = function (scale) {
-        return Math.log(scale * mapMinResolution) / Math.LN2;
-      };*/
 
       //Create GTA map tiles
-
       var layer = L.tileLayer("tiles/{z}/{x}/{y}.png", {
         minZoom: mapMinZoom,
         maxZoom: mapMaxZoom,
-        attribution:
-          'Rendered with <a href="https://www.maptiler.com/desktop/">MapTiler Desktop</a> by <a href="https://github.com/RussianRonin">RussianRonin</a> | Created by <a href="https://github.com/skyrossm">Skyrossm</a>',
+        attribution: "",
         noWrap: true,
         tms: true,
       });
 
       //Create the map object
-
       var map = new L.Map("map1", {
         maxZoom: mapMaxZoom,
         minZoom: mapMinZoom,
@@ -261,18 +166,19 @@
       let bgimage = L.imageOverlay("https://i.imgur.com/MQr04nZ.jpg", bounds, {
         opacity: 0,
       }).addTo(map);
+
       function setOverlay() {
         let imagelee = document.querySelector(".leaflet-image-layer");
         imagelee.style.opacity = overlay ? 0.5 : 0;
       }
 
       //Create Leaflet.Draw toolbar/layer
-
       //Fix for broken Draw
       L.Draw.Polyline.prototype._onTouch = L.Util.falseFn;
 
       var editableLayers = L.featureGroup();
       map.addLayer(editableLayers);
+
       var drawControl = new L.Control.Draw({
         draw: {
           polyline: false,
@@ -288,14 +194,8 @@
       function latlngToGTA(latlng) {
         var x = (latlng.lng - mapCenterLng) / gtaOffset;
         var y = (latlng.lat - mapCenterLat) / gtaOffset;
-        return [x.toFixed(2), y.toFixed(2)];
-      }
-
-      //Convert GTA coords to latlng on the map
-      function gtaToLatLng(x, y) {
-        var lng = x * gtaOffset + mapCenterLng;
-        var lat = y * gtaOffset + mapCenterLat;
-        return L.latLng(lat, lng);
+        // return numeric floats
+        return { X: toFloat(x, 2), Y: toFloat(y, 2) };
       }
 
       //Remove all shapes from Draw
@@ -303,133 +203,174 @@
         editableLayers.getLayers().forEach((layer) => {
           editableLayers.removeLayer(layer);
         });
+        exportData = [];
       }
 
-      //https://github.com/mkafrin/PolyZone/blob/master/server.lua
-      function parseShape(name, points) {
-        var printout = "--Name: " + name + " | " + new Date().toDateString();
-        printout += "\nPolyZone:Create({\n";
-        points.forEach((point, index) => {
-          var last = index < points.length - 1 ? "," : "";
-          printout +=
-            " vector2(" + point[0] + ", " + point[1] + ")" + last + "\n";
+      // Ensure polygon is closed: last point equals first point
+      function closePolygon(points) {
+        if (!points || points.length < 3) return points;
+        const first = points[0];
+        const last = points[points.length - 1];
+        if (first.X !== last.X || first.Y !== last.Y) {
+          points.push({ X: first.X, Y: first.Y });
+        }
+        return points;
+      }
+
+      function polygonToPoints(layer) {
+        // Leaflet polygon: layer._latlngs[0] is ring
+        const ring = layer._latlngs?.[0] ?? [];
+        const points = ring.map((latlng) => latlngToGTA(latlng));
+        return closePolygon(points);
+      }
+
+      function circleToData(layer) {
+        return {
+          center: latlngToGTA(layer.getLatLng()),
+          // keeping your old scaling *1.5, keep or remove as you like:
+          radius: toFloat(layer.getRadius() * 1.5, 2),
+        };
+      }
+
+      function upsertExportItem(id, item) {
+        const idx = exportData.findIndex((z) => z.id === id);
+        if (idx === -1) exportData.push(item);
+        else exportData[idx] = item;
+      }
+
+      function removeExportItem(id) {
+        exportData = exportData.filter((z) => z.id !== id);
+      }
+
+      function layerToPopupJSON(item) {
+        return (
+          "<code style='white-space:pre-wrap;'>" +
+          escapeHtml(JSON.stringify(item, null, 2)) +
+          "</code>"
+        );
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function downloadJSON() {
+        // Strip internal ids from export (optional)
+        const clean = exportData.map(({ id, ...rest }) => rest);
+        const blob = new Blob([JSON.stringify(clean, null, 2)], {
+          type: "application/json",
         });
-        var debugText = debug ? "\n debugGrid=true," : "";
-        printout +=
-          '}, {\n name="' +
-          name +
-          '",' +
-          debugText +
-          "\n --minZ=0,\n --maxZ=800\n})\n\n";
-        return printout;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "polyzones.json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
       }
 
-      //https://github.com/mkafrin/PolyZone/blob/master/server.lua
-      function parseCircle(name, center, radius) {
-        var printout = "--Name: " + name + " | " + new Date().toDateString();
-        printout +=
-          "\nCircleZone:Create(vector2(" +
-          center[0] +
-          ", " +
-          center[1] +
-          "), " +
-          radius +
-          ", ";
-        var debugText = debug ? "\n debugPoly=true," : "";
-        printout += '{\n name="' + name + '",' + debugText + "\n})\n\n";
-        return printout;
-      }
+      // Track deletes
+      map.on(L.Draw.Event.DELETED, (e) => {
+        e.layers.eachLayer(function (layer) {
+          if (layer && layer.__exportId) {
+            removeExportItem(layer.__exportId);
+          }
+        });
+      });
 
       //On shape created
       map.on(L.Draw.Event.CREATED, (e) => {
         var type = e.layerType,
           layer = e.layer;
 
-        //If it's a marker just show the GTA position
+        // Unique id for this layer in export
+        layer.__exportId = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+
         if (type === "marker") {
-          var position = latlngToGTA(layer.getLatLng());
+          const position = latlngToGTA(layer.getLatLng());
           layer.bindPopup(
-            "GTA Position: " + position + ", latlng: " + layer.getLatLng()
+            "GTA Position: " +
+              JSON.stringify(position) +
+              ", latlng: " +
+              layer.getLatLng()
           );
         } else if (type === "circle") {
-          var position = latlngToGTA(layer.getLatLng());
+          const name = prompt("Enter circlezone name: ") || "unnamed_circle";
+          const c = circleToData(layer);
 
-          let content = parseCircle(
-            prompt("Enter circlezone name: "),
-            latlngToGTA(layer.getLatLng()),
-            (layer.getRadius() * 1.5).toFixed(2)
-          );
-          layer.bindPopup(
-            "<code style='white-space:pre-wrap;'>" + content + "</code>",
-            { minWidth: 500 }
-          );
+          const item = {
+            id: layer.__exportId,
+            name,
+            type: "circle",
+            center: c.center,
+            radius: c.radius,
+          };
+
+          upsertExportItem(layer.__exportId, item);
+          layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
         } else {
-          //Get the polyzone name
-          var name = prompt("Enter polyzone name:");
-          //Show polyzone code on popup
-          var gtapoints = [];
-          layer._latlngs[0].forEach((latlng) => {
-            gtapoints.push(latlngToGTA(latlng));
-          });
+          const name = prompt("Enter polyzone name:") || "unnamed_polygon";
+          const points = polygonToPoints(layer);
 
-          var content = parseShape(name, gtapoints);
-          //Show in console as well just in case
-          console.log(content);
+          const item = {
+            id: layer.__exportId,
+            name,
+            type: "polygon",
+            points, // [{X,Y}, ... closed]
+          };
 
-          //Bind the popup
-          layer.bindPopup(
-            "<code style='white-space:pre-wrap;'>" + content + "</code>",
-            { minWidth: 500 }
-          );
+          upsertExportItem(layer.__exportId, item);
+          console.log(item);
+          layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
         }
 
-        //Add shape to map
         editableLayers.addLayer(layer);
       });
 
+      //On shape edited
       map.on(L.Draw.Event.EDITED, (e) => {
         var layers = e.layers;
 
         layers.eachLayer(function (layer) {
+          if (!layer.__exportId) return;
+
+          const existing = exportData.find((z) => z.id === layer.__exportId);
+          if (!existing) return;
+
           if (layer instanceof L.Marker) {
-            var position = latlngToGTA(layer.getLatLng());
+            const position = latlngToGTA(layer.getLatLng());
             layer.bindPopup(
-              "GTA Position: " + position + ", latlng: " + layer.getLatLng()
+              "GTA Position: " +
+                JSON.stringify(position) +
+                ", latlng: " +
+                layer.getLatLng()
             );
           } else if (layer instanceof L.Circle) {
-            var name = layer.getPopup().getContent().split(" |")[0].slice(44);
-
-            var position = latlngToGTA(layer.getLatLng());
-            let content = parseCircle(
-              name,
-              latlngToGTA(layer.getLatLng()),
-              (layer.getRadius() * 1.5).toFixed(2)
-            );
-            layer.bindPopup(
-              "<code style='white-space:pre-wrap;'>" + content + "</code>",
-              { minWidth: 500 }
-            );
+            const c = circleToData(layer);
+            const item = {
+              ...existing,
+              center: c.center,
+              radius: c.radius,
+            };
+            upsertExportItem(layer.__exportId, item);
+            layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
           } else {
-            //Get the polyzone name
-            //extracts from the previous popup, could use some love
-            var name = layer.getPopup().getContent().split(" |")[0].slice(44);
-            //Show polyzone code on popup
-            var gtapoints = [];
-            layer._latlngs[0].forEach((latlng) => {
-              gtapoints.push(latlngToGTA(latlng));
-            });
-            var content = parseShape(name, gtapoints);
-            //Bind the popup
-            layer.bindPopup(
-              "<code style='white-space:pre-wrap;'>" + content + "</code>",
-              { minWidth: 500 }
-            );
+            const points = polygonToPoints(layer);
+            const item = {
+              ...existing,
+              points,
+            };
+            upsertExportItem(layer.__exportId, item);
+            layer.bindPopup(layerToPopupJSON(item), { minWidth: 500 });
           }
         });
       });
-
-      //Center the map
-      //map.setView(xy(0, 0), 3);
     </script>
   </body>
 </html>
